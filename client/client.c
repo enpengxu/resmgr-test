@@ -7,68 +7,85 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <assert.h>
 #include <string.h>
+#include <pthread.h>
 #include <sys/neutrino.h>
 #include <sys/iofunc.h>
 #include <sys/dispatch.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include "../common.h"
 
-typedef struct
+struct ioctl_noop {
+	uint32_t foo;
+};
+
+#define MY_IOCTL_NOOP	_IOWR(0x01, 1, struct ioctl_noop)
+
+static void *
+io_send_thread(void *arg)
 {
-    uint16_t msg_no;
-    char msg_data[4096];
-} client_msg_t;
+	int rc, num = 0;
+	int fd = (int)(uintptr_t)arg;
+
+	struct io_msg msg = { 0 };
+	struct io_reply reply = { 0 };
+
+    msg.msg_no = _IO_MAX + 1;
+	msg.msg_tid= (uint32_t)pthread_self();
+    /* Send the data to the server and get a reply */
+	while(1) {
+		fprintf(stderr, "client[%x]: sending %d \n", msg.msg_tid, num);
+
+		if (msg.msg_tid % 2 ) {
+			sprintf(msg.msg_data, "client 1 msg #%d", num++);
+		} else {
+			sprintf(msg.msg_data, "client 0 msg #%d", num++);
+		}
+#if 0
+		msg.msg_len = strlen(msg.msg_data);
+
+		rc = MsgSend(fd, &msg, sizeof(uint32_t)*2 + msg.msg_len,
+				&reply, sizeof(reply));
+		if(rc == -1) {
+			fprintf( stderr, "clinet: error! Unable to MsgSend() to server: %s\n", strerror(errno));
+			return NULL;
+		}
+#else
+		{
+			struct ioctl_noop noop = { 0 };
+			rc = devctl(fd, MY_IOCTL_NOOP, &noop, sizeof(noop), NULL);
+		}
+#endif
+		fprintf(stderr, "client[%x]: done!\n", msg.msg_tid);
+
+		sleep(2);
+	}
+	return NULL;
+}
 
 int main( int argc, char **argv )
 {
-    int fd;
-    int i, c;
-    client_msg_t msg[64];
-    long ret;
-    char msg_reply[255];
+    int rc, fd;
 
-	iov_t	s_iov[64];
-	iov_t	r_iov[1];
-
-	for(i=0; i< 64; i++){
-		SETIOV(s_iov + i, &msg[i], sizeof msg[0]);
-		memset( &msg[i], 0, sizeof( msg[0] ) );
-		snprintf(msg[i].msg_data, 254, "%d: client %d requesting reply.", i, getpid() );
-	}
-	SETIOV(r_iov + 0, msg_reply, sizeof msg_reply);
-
-    /* Open a connection to the server (fd == coid) */
-    //fd = open( "/dev/drm/card0", O_RDWR );
     fd = open( "/dev/myresmgr", O_RDWR );
-    if( fd == -1 )
-    {
+    if( fd == -1 ) {
         fprintf( stderr, "Unable to open server connection: %s\n",
             strerror( errno ) );
         return EXIT_FAILURE;
     }
 
-    /* Clear the memory for the msg and the reply */
-    memset( &msg_reply, 0, sizeof( msg_reply ) );
+	pthread_t tid[2];
+	rc = pthread_create(&tid[0], NULL, io_send_thread, (void *)(uintptr_t)fd);
+	assert(rc == 0);
 
-    /* Set up the message data to send to the server */
-    msg[0].msg_no = _IO_MAX + 1;
+	rc = pthread_create(&tid[1], NULL, io_send_thread, (void *)(uintptr_t)fd);
+	assert(rc == 0);
 
-    fflush( stdout );
-
-	SETIOV(s_iov + 1, (void *)0x12345, 64);
-    /* Send the data to the server and get a reply */
-    ret = MsgSendv(fd, s_iov, 64, r_iov, 1);
-    if( ret == -1 )
-    {
-        fprintf( stderr, "Unable to MsgSend() to server: %s\n", strerror( errno ) );
-        return EXIT_FAILURE;
-    }
-
-    /* Print out the reply data */
-    printf( "client: server replied: %s\n", msg_reply );
-
-    printf( "client: original send data: %s\n", msg[0].msg_data );
+	pthread_join(tid[0], NULL);
+	pthread_join(tid[1], NULL);
 
     close( fd );
-
-    return EXIT_SUCCESS;
+    return 0;
 }
