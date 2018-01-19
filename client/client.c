@@ -76,15 +76,17 @@ int main( int argc, char **argv )
         return EXIT_FAILURE;
     }
 
-	pthread_t tid[2];
-	rc = pthread_create(&tid[0], NULL, io_send_thread, (void *)(uintptr_t)fd);
-	assert(rc == 0);
+#define NUM 2
+	pthread_t tid[NUM];
+	int i;
+	for(i=0; i<NUM; i++) {
+		rc = pthread_create(&tid[i], NULL, io_send_thread, (void *)(uintptr_t)fd);
+		assert(rc == 0);
+	}
 
-	rc = pthread_create(&tid[1], NULL, io_send_thread, (void *)(uintptr_t)fd);
-	assert(rc == 0);
-
-	pthread_join(tid[0], NULL);
-	pthread_join(tid[1], NULL);
+	for(i=0; i<NUM; i++) {
+		pthread_join(tid[i], NULL);
+	}
 
     close( fd );
     return 0;
