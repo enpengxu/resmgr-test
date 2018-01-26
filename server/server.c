@@ -50,10 +50,10 @@ int io_message( message_context_t *ctp,
 			"      str: %s\n",
 			tid,
 			msg.msg_tid, ctp->info.tid,  msg.msg_len, msg.msg_data);
-	if (tid % 2 ){
-		fprintf(stderr, "server[%x]: I am going to sleep \n", (uint32_t)tid);
-		sleep(1255);
-	}
+	/* if (tid % 2 ){ */
+	/* 	fprintf(stderr, "server[%x]: I am going to sleep \n", (uint32_t)tid); */
+	/* 	sleep(1255); */
+	/* } */
     /* Send a reply to the waiting (blocked) client */
     MsgReply(ctp->rcvid, EOK, &reply, sizeof(reply));
 
@@ -70,10 +70,10 @@ io_devctl(resmgr_context_t *ctp, io_devctl_t *msg, RESMGR_OCB_T *ocb)
 	fprintf(stderr, "io_devctl     : server[%x]  client: %x\n",
 			tid, (uint32_t)ctp->info.tid);
 
-	if (tid % 2 ){
-		fprintf(stderr, "server[%x]: I am going to sleep \n", (uint32_t)tid);
-		sleep(1255);
-	}
+	/* if (tid % 2 ){ */
+	/* 	fprintf(stderr, "server[%x]: I am going to sleep \n", (uint32_t)tid); */
+	/* 	sleep(1255); */
+	/* } */
 
 	msg->o.zero = 0;
 	msg->o.zero2 = 0;
@@ -198,19 +198,19 @@ int main( int argc, char **argv )
 	iofunc_attr_t           iofunc_attr;
 	resmgr_io_funcs_t       iofuncs;
 	resmgr_connect_funcs_t  connect_funcs;
-    resmgr_attr_t           resmgr_attr;
-    message_attr_t          message_attr;
-    dispatch_t            * dpp;
-    dispatch_context_t    * ctp, *ctp_ret;
-    int                     resmgr_id, message_id;
+	resmgr_attr_t           resmgr_attr;
+	message_attr_t          message_attr;
+	dispatch_t            * dpp;
+	dispatch_context_t    * ctp, *ctp_ret;
+	int                     resmgr_id, message_id;
 
-    /* Create the dispatch interface */
-    dpp = dispatch_create();
-    if( dpp == NULL ) {
-        fprintf( stderr, "dispatch_create() failed: %s\n",
-                 strerror( errno ) );
-        return EXIT_FAILURE;
-    }
+	/* Create the dispatch interface */
+	dpp = dispatch_create();
+	if( dpp == NULL ) {
+		fprintf( stderr, "dispatch_create() failed: %s\n",
+				 strerror( errno ) );
+		return EXIT_FAILURE;
+	}
 
     memset( &resmgr_attr, 0, sizeof( resmgr_attr ) );
     resmgr_attr.nparts_max = 2;

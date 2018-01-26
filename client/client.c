@@ -67,27 +67,38 @@ io_send_thread(void *arg)
 
 int main( int argc, char **argv )
 {
-    int rc, fd;
+    int rc, fd1, fd2;
 
-    fd = open( "/dev/myresmgr", O_RDWR );
-    if( fd == -1 ) {
+    fd1 = open( "/dev/myresmgr", O_RDWR );
+    if( fd1 == -1 ) {
         fprintf( stderr, "Unable to open server connection: %s\n",
             strerror( errno ) );
         return EXIT_FAILURE;
     }
 
-#define NUM 2
-	pthread_t tid[NUM];
+	fd2 = open( "/dev/myresmgr", O_RDWR );
+    if( fd2 == -1 ) {
+        fprintf( stderr, "Unable to open server connection: %s\n",
+            strerror( errno ) );
+        return EXIT_FAILURE;
+    }
+
+#define NUM 3
+	pthread_t tid[NUM+1];
 	int i;
 	for(i=0; i<NUM; i++) {
-		rc = pthread_create(&tid[i], NULL, io_send_thread, (void *)(uintptr_t)fd);
+		rc = pthread_create(&tid[i], NULL, io_send_thread, (void *)(uintptr_t)fd1);
 		assert(rc == 0);
 	}
+
+	rc = pthread_create(&tid[i], NULL, io_send_thread, (void *)(uintptr_t)fd2);
 
 	for(i=0; i<NUM; i++) {
 		pthread_join(tid[i], NULL);
 	}
+	pthread_join(tid[i], NULL);
 
-    close( fd );
+    close( fd1 );
+    close( fd2 );
     return 0;
 }
