@@ -9,15 +9,37 @@
 #include <string.h>
 #include <pthread.h>
 #include <assert.h>
+#include <atomic.h>
 #include <sys/neutrino.h>
 #include <sys/iofunc.h>
 #include <sys/dispatch.h>
 #include "../common.h"
 
+#define USE_RWLOCK_OCB
+
 struct server_ocb {
 	iofunc_ocb_t hdr;
+	unsigned signal_pending;
 	pthread_rwlock_t  rw_lock;
 };
+
+
+static void
+set_signal_flag(struct server_ocb * ocb)
+{
+	atomic_set(&ocb->signal_pending, 1);
+}
+static void
+clr_signal_flag(struct server_ocb * ocb)
+{
+	atomic_clr(&ocb->signal_pending, 1);
+}
+
+static unsigned
+is_signal_pending(struct server_ocb * ocb)
+{
+	return atomic_add_value(&ocb->signal_pending, 0);
+}
 
 int io_message( message_context_t *ctp,
 				int type, unsigned flags,void *handle )
@@ -80,6 +102,17 @@ io_devctl(resmgr_context_t *ctp, io_devctl_t *msg, RESMGR_OCB_T *ocb)
 
 	msg->o.ret_val = 0;
 	msg->o.nbytes = msg->i.nbytes;
+
+	int ntry = 0;
+	struct server_ocb * socb = ocb;
+	while(ntry++ < 10000){
+		if (is_signal_pending(socb)) {
+			fprintf(stderr, "io_devctl     :  ntry=%d, signal is pending\n", ntry);
+			msg->o.ret_val = EINTR;
+			return EINTR; //break;
+		}
+		sleep(1);
+	}
 	return (_RESMGR_PTR(ctp, &msg->o, sizeof(msg->o) + msg->o.nbytes));
 }
 
@@ -111,41 +144,67 @@ io_open(resmgr_context_t *ctp, io_open_t *msg, RESMGR_HANDLE_T *handle, void *ex
 	return rc;
 }
 
-
-#define USE_RWLOCK_OCB
-
 static int
 server_iofunc_lock_ocb(resmgr_context_t *ctp,
 		void *reserved, iofunc_ocb_t *ocb)
 {
 	fprintf(stderr, "io_lock_ocb   : ocb : %p, clinet:%x\n",
 			ocb, (uint32_t)ctp->info.tid);
-#ifdef USE_RWLOCK_OCB
+
 	int rc;
+
 	struct server_ocb * socb = ocb;
+	if (socb->signal_pending) {
+		struct _msg_info info;
+		if (MsgInfo(ctp->rcvid, &info) == EOK &&
+			!(info.flags & _NTO_MI_UNBLOCK_REQ)) {
+			clr_signal_flag(socb); //socb->signal_pending = 0;
+			fprintf(stderr, "io_lock_ocb    : clear signal pending flag\n");
+		}
+	}
 	rc = pthread_rwlock_rdlock(&socb->rw_lock);
+
 	assert(rc == 0);
 	return rc;
-#else
-	return 0; //iofunc_lock_ocb_default(ctp, reserved, ocb);
-#endif
+	//iofunc_lock_ocb_default(ctp, reserved, ocb);
 }
 static int
 server_iofunc_unlock_ocb(resmgr_context_t *ctp,
 		void *reserved, iofunc_ocb_t *ocb)
 {
-	fprintf(stderr, "io_unlock_ocb : ocb : %p, client:%x\n",
+	fprintf(stderr, "io_unlock_ocb   : ocb : %p, client:%x\n",
 			ocb, (uint32_t)ctp->info.tid);
-#ifdef USE_RWLOCK_OCB
+
 	int rc;
 	struct server_ocb * socb = ocb;
+
 	rc = pthread_rwlock_unlock(&socb->rw_lock);
 	assert(rc == 0);
 
 	return rc;
-#else
-	return 0; //iofunc_unlock_ocb_default(ctp, reserved, ocb);
-#endif
+	//return iofunc_unlock_ocb_default(ctp, reserved, ocb);
+}
+
+static int
+server_iofunc_unblock(resmgr_context_t *ctp, io_pulse_t *msg,  iofunc_ocb_t * ocb)
+{
+	int rc;
+	rc = iofunc_unblock_default(ctp, msg, ocb);
+	fprintf(stderr, "io_unblock     : rc=%x!\n", rc);
+
+	struct server_ocb * socb = ocb;
+	if (!is_signal_pending(socb)){
+		struct _msg_info info;
+		if (MsgInfo(ctp->rcvid, &info) == EOK && (info.flags & _NTO_MI_UNBLOCK_REQ)) {
+			set_signal_flag(socb); // socb->signal_pending = 1;
+			fprintf(stderr, "io_unblock    : set signal flag\n");
+		}
+		else {
+			fprintf(stderr, "io_unblock  : set signal flag but msg has been replied\n");
+		}
+	}
+
+	return rc;
 }
 
 static int
@@ -157,6 +216,7 @@ server_iofunc_close_ocb(resmgr_context_t *ctp,
 
 	fprintf(stderr, "io_close_ocb [%p] reying to lock rwlock ...\n", ocb);
 	rc = pthread_rwlock_wrlock(&socb->rw_lock);
+
 	assert(rc == 0);
 	fprintf(stderr, "io_close_ocb rwlocked ...\n");
 
@@ -223,6 +283,7 @@ int main( int argc, char **argv )
 	iofuncs.lock_ocb = server_iofunc_lock_ocb;
 	iofuncs.unlock_ocb = server_iofunc_unlock_ocb;
 	iofuncs.close_ocb = server_iofunc_close_ocb;
+	iofuncs.unblock = server_iofunc_unblock;
 
 	connect_funcs.open = io_open;
 

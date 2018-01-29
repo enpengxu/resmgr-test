@@ -32,9 +32,9 @@ io_send_thread(void *arg)
 	struct io_msg msg = { 0 };
 	struct io_reply reply = { 0 };
 
-    msg.msg_no = _IO_MAX + 1;
+	msg.msg_no = _IO_MAX + 1;
 	msg.msg_tid= (uint32_t)pthread_self();
-    /* Send the data to the server and get a reply */
+	/* Send the data to the server and get a reply */
 	while(1) {
 		fprintf(stderr, "client[%x]: sending %d \n", msg.msg_tid, num);
 
@@ -55,35 +55,44 @@ io_send_thread(void *arg)
 #else
 		{
 			struct ioctl_noop noop = { 0 };
+			// 1s
+			struct timespec timeout = { .tv_sec = 4 };
+			int timeout_rc = timer_timeout(CLOCK_MONOTONIC, _NTO_TIMEOUT_REPLY, NULL /*notify*/,
+					&timeout, NULL /*otime*/);
+
+			//SIGEV_PULSE_INIT(&event,
+			/* int rc1 = TimerTimeout(CLOCK_MONOTONIC, */
+			/* 		_NTO_TIMEOUT_SEND | _NTO_TIMEOUT_REPLY, &event, &timeout_ns, NULL); */
 			rc = devctl(fd, MY_IOCTL_NOOP, &noop, sizeof(noop), NULL);
+			fprintf(stderr, "devctl=%x, timeout=%x \n", rc, timeout_rc);
 		}
 #endif
-		fprintf(stderr, "client[%x]: done!\n", msg.msg_tid);
+		fprintf(stderr, "client[%x]: rc = %x done!\n", msg.msg_tid, rc);
 
-		sleep(2);
+		//sleep(2);
 	}
 	return NULL;
 }
 
 int main( int argc, char **argv )
 {
-    int rc, fd1, fd2;
+	int rc, fd1, fd2;
 
-    fd1 = open( "/dev/myresmgr", O_RDWR );
-    if( fd1 == -1 ) {
-        fprintf( stderr, "Unable to open server connection: %s\n",
-            strerror( errno ) );
-        return EXIT_FAILURE;
-    }
+	fd1 = open( "/dev/myresmgr", O_RDWR );
+	if( fd1 == -1 ) {
+		fprintf( stderr, "Unable to open server connection: %s\n",
+			strerror( errno ) );
+		return EXIT_FAILURE;
+	}
 
 	fd2 = open( "/dev/myresmgr", O_RDWR );
-    if( fd2 == -1 ) {
-        fprintf( stderr, "Unable to open server connection: %s\n",
-            strerror( errno ) );
-        return EXIT_FAILURE;
-    }
+	if( fd2 == -1 ) {
+		fprintf( stderr, "Unable to open server connection: %s\n",
+			strerror( errno ) );
+		return EXIT_FAILURE;
+	}
 
-#define NUM 3
+#define NUM 1
 	pthread_t tid[NUM+1];
 	int i;
 	for(i=0; i<NUM; i++) {
@@ -91,14 +100,14 @@ int main( int argc, char **argv )
 		assert(rc == 0);
 	}
 
-	rc = pthread_create(&tid[i], NULL, io_send_thread, (void *)(uintptr_t)fd2);
+	//rc = pthread_create(&tid[i], NULL, io_send_thread, (void *)(uintptr_t)fd2);
 
 	for(i=0; i<NUM; i++) {
 		pthread_join(tid[i], NULL);
 	}
-	pthread_join(tid[i], NULL);
+	//pthread_join(tid[i], NULL);
 
-    close( fd1 );
-    close( fd2 );
-    return 0;
+	close( fd1 );
+	close( fd2 );
+	return 0;
 }
